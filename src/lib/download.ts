@@ -9,14 +9,22 @@ import { stripHiddenShapes } from './strip-hidden'
  * `hd` on shapes); hidden layers keep their `hd: true` flag instead.
  */
 export function downloadLottie(doc: LottieDoc, originalFileName: string | null): void {
-  const base = (originalFileName ?? 'animation.json').replace(/\.json$/i, '')
   const cleaned = stripHiddenShapes(structuredClone(doc))
   const blob = new Blob([JSON.stringify(cleaned)], { type: 'application/json' })
+  downloadBlob(blob, `${exportBaseName(originalFileName)}-edited.json`)
+}
+
+/** File name stem shared by all exports: original name minus its extension. */
+export function exportBaseName(originalFileName: string | null): string {
+  return (originalFileName ?? 'animation.json').replace(/\.json$/i, '')
+}
+
+export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)
   try {
     const a = document.createElement('a')
     a.href = url
-    a.download = `${base}-edited.json`
+    a.download = fileName
     a.click()
   } finally {
     URL.revokeObjectURL(url)

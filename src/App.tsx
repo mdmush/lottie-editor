@@ -1,5 +1,6 @@
 import { DropZone } from './components/DropZone'
 import { ExportButton } from './components/ExportButton'
+import { ExportMp4Button } from './components/ExportMp4Button'
 import { ResetButton } from './components/ResetButton'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Player } from './components/player/Player'
@@ -54,6 +55,7 @@ export default function App() {
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
           <ResetButton />
+          <ExportMp4Button />
           <ExportButton />
         </div>
       </header>
