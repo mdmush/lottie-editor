@@ -86,7 +86,7 @@ export function PlayerControls({
       <span className="font-mono text-[11px] tabular-nums text-ink-400">
         f&thinsp;{String(Math.round(Math.min(frame, Math.max(0, totalFrames - 1)))).padStart(pad, '0')}
         <span className="text-ink-500"> / {Math.max(0, totalFrames - 1)}</span>
-        <span className="text-ink-500"> · {frameRate}&thinsp;fps</span>
+        <span className="text-ink-500"> · {Number(frameRate.toFixed(2))}&thinsp;fps</span>
       </span>
 
       <span className="ml-auto hidden items-center gap-1.5 text-[11px] text-ink-400 sm:flex">

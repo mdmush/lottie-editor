@@ -72,6 +72,20 @@ export default function App() {
           <DropZone />
         </main>
       )}
+
+      <footer className="flex h-8 shrink-0 items-center justify-center border-t border-ink-800 bg-ink-900 text-[11px] text-ink-400">
+        <span>
+          Made with <span className="text-red-500">❤︎</span> by{' '}
+          <a
+            href="https://mdmush.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-ink-200 underline decoration-ink-600 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent"
+          >
+            Mush
+          </a>
+        </span>
+      </footer>
     </div>
   )
 }
