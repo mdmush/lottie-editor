@@ -19,11 +19,18 @@ interface EditorState {
   docRevision: number
   /** True once any edit has been made since load/reset. */
   isDirty: boolean
+  /** docRevision at the last library save; unsaved = docRevision differs. */
+  savedRevision: number
+  /** Timestamp of the last successful library save for the open file. */
+  lastSavedAt: number | null
+  isSaving: boolean
+  markSaving: () => void
+  markSaved: (revision: number, at: number) => void
   colorGroups: ColorGroup[]
   /** Element to outline in the player while a tree row is hovered. */
   highlight: HighlightTarget | null
   setHighlight: (target: HighlightTarget | null) => void
-  loadFile: (json: LottieDoc, name: string) => void
+  loadFile: (json: LottieDoc, name: string, savedAt?: number) => void
   /** Live update while dragging a picker — throttled internally. */
   previewColor: (groupHex: string, newHex: string) => void
   /** Final value on picker release — applies immediately and regroups. */
@@ -101,8 +108,27 @@ export const useEditorStore = create<EditorState>()(
       fileName: null,
       docRevision: 0,
       isDirty: false,
+      savedRevision: 0,
+      lastSavedAt: null,
+      isSaving: false,
       colorGroups: [],
       highlight: null,
+
+      markSaving: () => {
+        set((state) => {
+          state.isSaving = true
+        })
+      },
+
+      markSaved: (revision, at) => {
+        set((state) => {
+          state.isSaving = false
+          // A stale save (older overlapping write) must not regress state.
+          if (revision <= state.savedRevision) return
+          state.savedRevision = revision
+          state.lastSavedAt = at
+        })
+      },
 
       setHighlight: (target) => {
         set((state) => {
@@ -110,7 +136,7 @@ export const useEditorStore = create<EditorState>()(
         })
       },
 
-      loadFile: (json, name) => {
+      loadFile: (json, name, savedAt) => {
         cancelPendingPreview()
         const doc = structuredClone(json)
         set((state) => {
@@ -119,6 +145,10 @@ export const useEditorStore = create<EditorState>()(
           state.fileName = name
           state.docRevision++
           state.isDirty = false
+          // A just-loaded file matches its library record by definition.
+          state.savedRevision = state.docRevision
+          state.lastSavedAt = savedAt ?? Date.now()
+          state.isSaving = false
           state.colorGroups = extractColors(doc)
           state.highlight = null
         })
@@ -178,6 +208,9 @@ export const useEditorStore = create<EditorState>()(
           state.isDirty = false
           state.highlight = null
           state.docRevision++
+          state.savedRevision = state.docRevision
+          state.lastSavedAt = null
+          state.isSaving = false
         })
       },
     }

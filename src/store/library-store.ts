@@ -19,12 +19,17 @@ interface LibraryState {
    * persist it. `doc` is the pristine parse — edits never touch the library.
    */
   upsert: (doc: LottieDoc, name: string) => void
+  /**
+   * Persist the current edits into an existing record (autosave). Updates
+   * the doc, thumbnail, and savedAt in place without reordering the list.
+   */
+  saveDoc: (name: string, doc: LottieDoc) => Promise<void>
   remove: (name: string) => void
 }
 
 let hydrated = false
 
-export const useLibraryStore = create<LibraryState>()((set) => ({
+export const useLibraryStore = create<LibraryState>()((set, get) => ({
   items: [],
 
   hydrate: async () => {
@@ -41,14 +46,29 @@ export const useLibraryStore = create<LibraryState>()((set) => ({
   },
 
   upsert: (doc, name) => {
+    const now = Date.now()
     const item: LibraryItem = {
       name,
       doc: structuredClone(doc),
       thumbnail: renderThumbnail(doc),
-      addedAt: Date.now(),
+      addedAt: now,
+      savedAt: now,
     }
     set((state) => ({ items: [item, ...state.items.filter((i) => i.name !== name)] }))
     void putRecord(item)
+  },
+
+  saveDoc: async (name, doc) => {
+    const existing = get().items.find((i) => i.name === name)
+    if (!existing) return
+    const item: LibraryItem = {
+      ...existing,
+      doc,
+      thumbnail: renderThumbnail(doc),
+      savedAt: Date.now(),
+    }
+    set((state) => ({ items: state.items.map((i) => (i.name === name ? item : i)) }))
+    await putRecord(item)
   },
 
   remove: (name) => {

@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { saveNow } from '../../hooks/useAutoSave'
 import { useFileDrop } from '../../hooks/useFileDrop'
 import { useEditorStore } from '../../store/editor-store'
 import { useLibraryStore, type LibraryItem } from '../../store/library-store'
@@ -14,7 +15,6 @@ function ThumbnailFallback() {
 
 function LibraryRow({ item }: { item: LibraryItem }) {
   const fileName = useEditorStore((s) => s.fileName)
-  const isDirty = useEditorStore((s) => s.isDirty)
   const loadFile = useEditorStore((s) => s.loadFile)
   const remove = useLibraryStore((s) => s.remove)
 
@@ -26,13 +26,9 @@ function LibraryRow({ item }: { item: LibraryItem }) {
 
   const open = () => {
     if (isActive) return
-    if (
-      isDirty &&
-      !window.confirm('Discard unsaved changes to the current animation?')
-    ) {
-      return
-    }
-    loadFile(item.doc, item.name)
+    // Flush pending edits on the outgoing file before swapping docs.
+    void saveNow()
+    loadFile(item.doc, item.name, item.savedAt ?? item.addedAt)
   }
 
   return (

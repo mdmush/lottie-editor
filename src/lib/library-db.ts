@@ -13,6 +13,8 @@ export interface LibraryRecord {
   /** SVG data URL of a mid-animation frame, or null if rendering failed. */
   thumbnail: string | null
   addedAt: number
+  /** Last time edits were saved into this record. Absent in pre-autosave records. */
+  savedAt?: number
 }
 
 const DB_NAME = 'lottie-editor'

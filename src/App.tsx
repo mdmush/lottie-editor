@@ -3,10 +3,12 @@ import { DropZone } from './components/DropZone'
 import { ExportButton } from './components/ExportButton'
 import { ExportMp4Button } from './components/ExportMp4Button'
 import { ResetButton } from './components/ResetButton'
+import { SaveStatus } from './components/SaveStatus'
 import { ThemeToggle } from './components/ThemeToggle'
 import { LibraryPanel } from './components/library/LibraryPanel'
 import { Player } from './components/player/Player'
 import { Sidebar } from './components/sidebar/Sidebar'
+import { saveNow, useAutoSave } from './hooks/useAutoSave'
 import { useEditorStore } from './store/editor-store'
 import { useLibraryStore } from './store/library-store'
 
@@ -23,13 +25,14 @@ function LogoMark() {
 export default function App() {
   const hasDoc = useEditorStore((s) => s.doc !== null)
   const fileName = useEditorStore((s) => s.fileName)
-  const isDirty = useEditorStore((s) => s.isDirty)
   const closeFile = useEditorStore((s) => s.closeFile)
   const hydrateLibrary = useLibraryStore((s) => s.hydrate)
 
   useEffect(() => {
     void hydrateLibrary()
   }, [hydrateLibrary])
+
+  useAutoSave()
 
   return (
     <div className="flex h-full flex-col bg-ink-950 font-sans text-ink-100 antialiased">
@@ -40,17 +43,13 @@ export default function App() {
         </div>
         {fileName && (
           <span className="flex min-w-0 items-center gap-2 rounded-full border border-ink-700 bg-ink-850 py-1 pl-3 pr-1.5 text-xs text-ink-300">
-            {isDirty && (
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                title="Unsaved changes"
-                aria-label="Unsaved changes"
-                role="status"
-              />
-            )}
             <span className="truncate font-mono text-[11px]">{fileName}</span>
             <button
-              onClick={closeFile}
+              onClick={() => {
+                // Flush pending edits so nothing in the autosave window is lost.
+                void saveNow()
+                closeFile()
+              }}
               aria-label="Close file"
               className="rounded-full p-1 text-ink-400 transition-colors hover:bg-ink-700 hover:text-ink-100"
             >
@@ -61,6 +60,7 @@ export default function App() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <SaveStatus />
           <ThemeToggle />
           <ResetButton />
           <ExportMp4Button />
