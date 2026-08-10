@@ -1,6 +1,7 @@
 import { useCallback, useState, type DragEvent } from 'react'
 import type { LottieDoc } from '../types/lottie'
 import { useEditorStore } from '../store/editor-store'
+import { useLibraryStore } from '../store/library-store'
 
 function looksLikeLottie(json: unknown): json is LottieDoc {
   return (
@@ -26,6 +27,7 @@ export function useFileDrop() {
           return
         }
         loadFile(json, file.name)
+        useLibraryStore.getState().upsert(json, file.name)
       } catch {
         setError(`"${file.name}" could not be parsed as JSON.`)
       }
@@ -37,8 +39,12 @@ export function useFileDrop() {
     (e: DragEvent) => {
       e.preventDefault()
       setIsDragging(false)
-      const file = e.dataTransfer.files[0]
-      if (file) void loadFromFile(file)
+      // Sequential so a multi-file drop lands in a stable order and the
+      // last file ends up open in the editor.
+      const files = Array.from(e.dataTransfer.files)
+      void (async () => {
+        for (const file of files) await loadFromFile(file)
+      })()
     },
     [loadFromFile],
   )

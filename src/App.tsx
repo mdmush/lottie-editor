@@ -1,11 +1,14 @@
+import { useEffect } from 'react'
 import { DropZone } from './components/DropZone'
 import { ExportButton } from './components/ExportButton'
 import { ExportMp4Button } from './components/ExportMp4Button'
 import { ResetButton } from './components/ResetButton'
 import { ThemeToggle } from './components/ThemeToggle'
+import { LibraryPanel } from './components/library/LibraryPanel'
 import { Player } from './components/player/Player'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { useEditorStore } from './store/editor-store'
+import { useLibraryStore } from './store/library-store'
 
 /** Keyframe diamond on an amber tile — the mark of the app. */
 function LogoMark() {
@@ -22,6 +25,11 @@ export default function App() {
   const fileName = useEditorStore((s) => s.fileName)
   const isDirty = useEditorStore((s) => s.isDirty)
   const closeFile = useEditorStore((s) => s.closeFile)
+  const hydrateLibrary = useLibraryStore((s) => s.hydrate)
+
+  useEffect(() => {
+    void hydrateLibrary()
+  }, [hydrateLibrary])
 
   return (
     <div className="flex h-full flex-col bg-ink-950 font-sans text-ink-100 antialiased">
@@ -60,18 +68,21 @@ export default function App() {
         </div>
       </header>
 
-      {hasDoc ? (
-        <div className="flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1">
-            <Player />
+      <div className="flex min-h-0 flex-1">
+        <LibraryPanel />
+        {hasDoc ? (
+          <>
+            <main className="min-w-0 flex-1">
+              <Player />
+            </main>
+            <Sidebar />
+          </>
+        ) : (
+          <main className="min-h-0 min-w-0 flex-1">
+            <DropZone />
           </main>
-          <Sidebar />
-        </div>
-      ) : (
-        <main className="min-h-0 flex-1">
-          <DropZone />
-        </main>
-      )}
+        )}
+      </div>
 
       <footer className="flex h-8 shrink-0 items-center justify-center border-t border-ink-800 bg-ink-900 text-[11px] text-ink-400">
         <span>
