@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { downloadBlob, exportBaseName } from '../lib/download'
+import { useResolvedExportRange } from '../hooks/useExportRange'
+import { usePopoverDismiss } from '../hooks/usePopoverDismiss'
+import { downloadBlob, exportBaseName, rangeSuffix } from '../lib/download'
 import { canExportMp4, detectTransparency, exportMp4 } from '../lib/export-mp4'
 import { useEditorStore } from '../store/editor-store'
+import { ExportRangePicker } from './ExportRangePicker'
 
 /**
  * Header button that opens a small export popover. MP4 has no alpha channel,
  * so the popover always offers a background color; when the animation is
- * detected to have transparent regions it says so explicitly.
+ * detected to have transparent regions it says so explicitly. It also asks
+ * whether to render the entire timeline or only a frame range.
  */
 export function ExportMp4Button() {
   const doc = useEditorStore((s) => s.doc)
   const docRevision = useEditorStore((s) => s.docRevision)
   const fileName = useEditorStore((s) => s.fileName)
+  const { range, isAll } = useResolvedExportRange()
 
   const [open, setOpen] = useState(false)
   const [bgColor, setBgColor] = useState('#ffffff')
@@ -22,21 +27,7 @@ export function ExportMp4Button() {
   const exporting = progress !== null
 
   // Close on outside click / Escape (but never mid-export).
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node) && progress === null) setOpen(false)
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && progress === null) setOpen(false)
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open, progress])
+  usePopoverDismiss(rootRef, open, exporting, () => setOpen(false))
 
   // Check for transparent pixels whenever the popover opens on a fresh doc.
   useEffect(() => {
@@ -60,8 +51,12 @@ export function ExportMp4Button() {
     setError(null)
     setProgress(0)
     try {
-      const blob = await exportMp4(doc, { backgroundColor: bgColor, onProgress: setProgress })
-      downloadBlob(blob, `${exportBaseName(fileName)}.mp4`)
+      const blob = await exportMp4(doc, {
+        backgroundColor: bgColor,
+        range: isAll ? undefined : range,
+        onProgress: setProgress,
+      })
+      downloadBlob(blob, `${exportBaseName(fileName)}${isAll ? '' : rangeSuffix(range)}.mp4`)
       setProgress(null)
       setOpen(false)
     } catch (e) {
@@ -113,6 +108,8 @@ export function ExportMp4Button() {
             </p>
           )}
 
+          <ExportRangePicker disabled={exporting} />
+
           <label className="mt-3 flex cursor-pointer items-center gap-3">
             <span className="text-xs text-ink-300">Background</span>
             <span className="checkerboard-sm relative ml-auto inline-block h-7 w-7 overflow-hidden rounded-md shadow-[inset_0_0_0_1px_var(--swatch-ring)] focus-within:ring-2 focus-within:ring-accent-text focus-within:ring-offset-2 focus-within:ring-offset-ink-900">
@@ -146,8 +143,10 @@ export function ExportMp4Button() {
             >
               {exporting ? (
                 <span className="font-mono text-xs tabular-nums">{Math.round((progress ?? 0) * 100)}%</span>
+              ) : isAll ? (
+                'Export entire timeline'
               ) : (
-                'Export video'
+                `Export frames ${range.start}–${range.end}`
               )}
             </button>
           )}

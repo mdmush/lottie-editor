@@ -2,10 +2,13 @@ import lottie, { type AnimationItem } from 'lottie-web'
 import { ArrayBufferTarget, Muxer } from 'mp4-muxer'
 import type { LottieDoc } from '../types/lottie'
 import { stripHiddenShapes } from './strip-hidden'
+import { docFrameCount, isFullRange, trimDoc, type FrameRange } from './trim'
 
 export interface Mp4ExportOptions {
   /** CSS hex color painted under every frame — MP4 has no alpha channel. */
   backgroundColor: string
+  /** Inclusive player-frame range to render; omit for the whole timeline. */
+  range?: FrameRange
   /** 0..1, called as frames are encoded. */
   onProgress?: (fraction: number) => void
 }
@@ -21,12 +24,17 @@ export function canExportMp4(): boolean {
  * (dpr locked to 1 so canvas pixels map 1:1 to animation units). Resolves
  * once vector data and any embedded images are ready to draw.
  */
-async function loadHeadlessAnim(doc: LottieDoc, ctx: CanvasRenderingContext2D): Promise<AnimationItem> {
+async function loadHeadlessAnim(
+  doc: LottieDoc,
+  ctx: CanvasRenderingContext2D,
+  range?: FrameRange,
+): Promise<AnimationItem> {
+  const cleaned = stripHiddenShapes(structuredClone(doc))
   const anim = lottie.loadAnimation({
     renderer: 'canvas',
     loop: false,
     autoplay: false,
-    animationData: stripHiddenShapes(structuredClone(doc)),
+    animationData: range && !isFullRange(range, docFrameCount(doc)) ? trimDoc(cleaned, range) : cleaned,
     rendererSettings: { context: ctx, clearCanvas: true, dpr: 1 },
   } as unknown as Parameters<typeof lottie.loadAnimation>[0])
 
@@ -101,9 +109,10 @@ async function pickEncoderConfig(width: number, height: number, fps: number): Pr
 }
 
 /**
- * Render every frame through lottie-web's canvas renderer, composite it over
- * the chosen background color, encode with WebCodecs, and mux into an MP4
- * blob. Runs on the main thread; yields periodically so progress can paint.
+ * Render every frame (of `options.range`, or the whole timeline) through
+ * lottie-web's canvas renderer, composite it over the chosen background
+ * color, encode with WebCodecs, and mux into an MP4 blob. Runs on the main
+ * thread; yields periodically so progress can paint.
  */
 export async function exportMp4(doc: LottieDoc, options: Mp4ExportOptions): Promise<Blob> {
   if (!canExportMp4()) throw new Error('MP4 export needs a browser with WebCodecs (Chrome, Edge, or Safari 16.4+).')
@@ -140,7 +149,7 @@ export async function exportMp4(doc: LottieDoc, options: Mp4ExportOptions): Prom
   })
   encoder.configure(config)
 
-  const anim = await loadHeadlessAnim(doc, renderCtx)
+  const anim = await loadHeadlessAnim(doc, renderCtx, options.range)
   try {
     const totalFrames = Math.max(1, Math.round(anim.totalFrames))
     const keyframeInterval = Math.max(1, Math.round(fps * 2))
