@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import lottie, { type AnimationItem } from 'lottie-web'
 import { resolveHighlight } from '../lib/highlight'
+import { docPathToRenderedTarget } from '../lib/node-addressing'
+import { playerHandle } from '../lib/player-handle'
 import { stripHiddenShapes } from '../lib/strip-hidden'
 import { useEditorStore } from '../store/editor-store'
 
@@ -60,10 +62,18 @@ export function useLottiePlayer(containerRef: RefObject<HTMLDivElement | null>):
   const [speed, setSpeedState] = useState(1)
   const [loop, setLoopState] = useState(true)
 
-  // While a tree row is hovered, keep the outline applied to its rendered
-  // element. Re-resolved every animation frame because color edits rebuild
-  // the whole SVG mid-hover, and geometry path data changes as it animates.
-  const highlight = useEditorStore((s) => s.highlight)
+  // Outline target: hover wins over the persistent selection. Re-resolved
+  // every animation frame because doc edits rebuild the whole SVG mid-hover,
+  // and geometry path data changes as it animates. The selection's rendered
+  // target is derived fresh from the doc — rendered indices shift whenever
+  // visibility toggles or an undo lands.
+  const hoverHighlight = useEditorStore((s) => s.highlight)
+  const selection = useEditorStore((s) => s.selection)
+  const selectionTarget = useMemo(
+    () => (doc && selection ? docPathToRenderedTarget(doc, selection.nodePath) : null),
+    [doc, selection],
+  )
+  const highlight = hoverHighlight ?? selectionTarget
   useEffect(() => {
     if (!highlight) return
     const outline = getOutlineStyle()
@@ -178,7 +188,13 @@ export function useLottiePlayer(containerRef: RefObject<HTMLDivElement | null>):
       setIsPlaying(true)
     }
 
-    const onEnterFrame = () => setFrame(anim.currentFrame)
+    const onEnterFrame = () => {
+      setFrame(anim.currentFrame)
+      // Mirror into the store (int-deduped) for the editor-mode panels.
+      // anim.currentFrame is relative to doc.ip; keyframe `t` values are
+      // absolute doc frames, so the store playhead lives in doc-frame space.
+      useEditorStore.getState().setPlayhead(anim.currentFrame + (doc.ip ?? 0))
+    }
     const onComplete = () => setIsPlaying(false)
     anim.addEventListener('enterFrame', onEnterFrame)
     anim.addEventListener('complete', onComplete)
@@ -212,7 +228,24 @@ export function useLottiePlayer(containerRef: RefObject<HTMLDivElement | null>):
     if (anim.isPaused) anim.goToAndStop(target, true)
     else anim.goToAndPlay(target, true)
     setFrame(target)
+    const d = useEditorStore.getState().doc
+    useEditorStore.getState().setPlayhead(target + (typeof d?.ip === 'number' ? d.ip : 0))
   }, [])
+
+  const pause = useCallback(() => {
+    const anim = animRef.current
+    if (!anim || anim.isPaused) return
+    anim.pause()
+    setIsPlaying(false)
+  }, [])
+
+  // Imperative bridge for editor UI (track-panel seeks, canvas drags).
+  useEffect(() => {
+    playerHandle.current = { seek, pause, anim: () => animRef.current }
+    return () => {
+      playerHandle.current = null
+    }
+  }, [seek, pause])
 
   const setSpeed = useCallback((value: number) => {
     animRef.current?.setSpeed(value)

@@ -11,11 +11,50 @@ export interface LottieProperty {
   [key: string]: unknown
 }
 
+/** Per-segment easing handle; x/y are per-dimension arrays or scalars. */
+export interface KeyframeEasing {
+  x?: number[] | number
+  y?: number[] | number
+  [key: string]: unknown
+}
+
 export interface LottieKeyframe {
   t?: number
   s?: unknown
   /** legacy end-value, emitted by old Bodymovin versions */
   e?: unknown
+  /** incoming easing of the segment this keyframe starts */
+  i?: KeyframeEasing
+  /** outgoing easing of the segment this keyframe starts */
+  o?: KeyframeEasing
+  /** 1 = hold — the value jumps at the next keyframe */
+  h?: number
+  /** spatial in-tangent of the segment this (position) keyframe starts */
+  ti?: number[]
+  /** spatial out-tangent of the segment this (position) keyframe starts */
+  to?: number[]
+  [key: string]: unknown
+}
+
+/**
+ * Position properties may be split (`s: true`) into independent scalar
+ * `x`/`y` (and `z`) sub-properties instead of a single multi-dim `k`.
+ */
+export interface LottiePositionProperty extends LottieProperty {
+  s?: unknown
+  x?: LottieProperty
+  y?: LottieProperty
+  z?: LottieProperty
+}
+
+export interface LottieTransform {
+  a?: LottieProperty
+  p?: LottiePositionProperty
+  s?: LottieProperty
+  r?: LottieProperty
+  o?: LottieProperty
+  sk?: LottieProperty
+  sa?: LottieProperty
   [key: string]: unknown
 }
 
@@ -35,6 +74,30 @@ export interface ShapeItem {
   it?: ShapeItem[]
   c?: LottieProperty
   g?: GradientDef
+  /** opacity (most types) */
+  o?: LottieProperty
+  /** stroke width */
+  w?: LottieProperty
+  /** trim start / rect & ellipse size / gradient start point */
+  s?: LottieProperty
+  /** position (rect/ellipse/polystar/transform) */
+  p?: LottiePositionProperty
+  /** rotation (transform/polystar) / roundness (rect) */
+  r?: LottieProperty
+  /** trim end / gradient end point */
+  e?: LottieProperty
+  /** transform anchor point */
+  a?: LottieProperty
+  /** polystar point count */
+  pt?: LottieProperty
+  /** polystar outer radius */
+  or?: LottieProperty
+  /** polystar inner radius */
+  ir?: LottieProperty
+  /** polystar outer roundness */
+  os?: LottieProperty
+  /** polystar inner roundness */
+  is?: LottieProperty
   [key: string]: unknown
 }
 
@@ -70,6 +133,13 @@ export interface LottieLayer {
   sc?: string
   /** hidden flag — true renders the layer invisible */
   hd?: boolean
+  /** layer transform */
+  ks?: LottieTransform
+  ip?: number
+  op?: number
+  st?: number
+  ind?: number
+  parent?: number
   shapes?: ShapeItem[]
   t?: LottieTextData
   layers?: LottieLayer[]

@@ -8,7 +8,10 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { LibraryPanel } from './components/library/LibraryPanel'
 import { Player } from './components/player/Player'
 import { Sidebar } from './components/sidebar/Sidebar'
+import { UndoRedoButtons } from './components/UndoRedoButtons'
 import { saveNow, useAutoSave } from './hooks/useAutoSave'
+import { useEditorHotkeys } from './hooks/useEditorHotkeys'
+import { describeNode } from './lib/node-addressing'
 import { useEditorStore } from './store/editor-store'
 import { useLibraryStore } from './store/library-store'
 
@@ -19,6 +22,33 @@ function LogoMark() {
       <rect width="20" height="20" rx="5" className="fill-accent" />
       <path d="M10 4.8 15.2 10 10 15.2 4.8 10Z" className="fill-on-accent" />
     </svg>
+  )
+}
+
+/** Amber "Editing · {element}" chip shown while an element is selected. */
+function EditingPill() {
+  const label = useEditorStore((s) =>
+    s.doc && s.selection ? (describeNode(s.doc, s.selection.nodePath)?.label ?? null) : null,
+  )
+  const clearSelection = useEditorStore((s) => s.clearSelection)
+
+  if (label === null) return null
+
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-3 pr-1.5 text-xs text-accent-text">
+      <span className="shrink-0 font-medium">Editing</span>
+      <span className="truncate font-mono text-[11px]">{label}</span>
+      <button
+        onClick={clearSelection}
+        aria-label="Done editing"
+        title="Done (Esc)"
+        className="rounded-full p-1 transition-colors hover:bg-accent/20"
+      >
+        <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <path d="M3 3l6 6M9 3l-6 6" />
+        </svg>
+      </button>
+    </span>
   )
 }
 
@@ -33,6 +63,7 @@ export default function App() {
   }, [hydrateLibrary])
 
   useAutoSave()
+  useEditorHotkeys()
 
   return (
     <div className="flex h-full flex-col bg-ink-950 font-sans text-ink-100 antialiased">
@@ -59,9 +90,11 @@ export default function App() {
             </button>
           </span>
         )}
+        <EditingPill />
         <div className="ml-auto flex items-center gap-2">
           <SaveStatus />
           <ThemeToggle />
+          <UndoRedoButtons />
           <ResetButton />
           <ExportMp4Button />
           <ExportButton />

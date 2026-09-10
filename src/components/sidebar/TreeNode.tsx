@@ -1,19 +1,6 @@
 import { useState } from 'react'
-import type { HighlightTarget } from '../../lib/highlight'
-import type { JsonPath } from '../../lib/json-path'
+import { pathsEqual, type DocNode } from '../../lib/node-addressing'
 import { useEditorStore } from '../../store/editor-store'
-
-export interface TreeNodeData {
-  id: string
-  label: string
-  badge?: string
-  children: TreeNodeData[]
-  /** Present on hideable nodes (layers and shape items) — enables the visibility toggle. */
-  nodePath?: JsonPath
-  hidden?: boolean
-  /** Rendered element to outline in the player on hover; null when hidden. */
-  highlightTarget?: HighlightTarget | null
-}
 
 function EyeIcon({ hidden }: { hidden: boolean }) {
   return hidden ? (
@@ -25,32 +12,38 @@ function EyeIcon({ hidden }: { hidden: boolean }) {
       <path d="M1.3 8C2.5 5.3 5 3.5 8 3.5S13.5 5.3 14.7 8C13.5 10.7 11 12.5 8 12.5S2.5 10.7 1.3 8Z" />
       <circle cx="8" cy="8" r="2" />
     </svg>
-  )
-}
+  )}
 
-export function TreeNode({ node, depth }: { node: TreeNodeData; depth: number }) {
+export function TreeNode({ node, depth }: { node: DocNode; depth: number }) {
   const [open, setOpen] = useState(depth < 1)
   const toggleVisibility = useEditorStore((s) => s.toggleVisibility)
   const setHighlight = useEditorStore((s) => s.setHighlight)
+  const select = useEditorStore((s) => s.select)
+  const selected = useEditorStore((s) =>
+    s.selection ? pathsEqual(s.selection.nodePath, node.path) : false,
+  )
   const hasChildren = node.children.length > 0
 
   return (
     <div>
       <div
-        className="group flex items-center rounded-md transition-colors hover:bg-ink-800"
-        onMouseEnter={() => setHighlight(node.highlightTarget ?? null)}
+        className={`group flex items-center rounded-md transition-colors ${
+          selected ? 'bg-accent/15' : 'hover:bg-ink-800'
+        }`}
+        onMouseEnter={() => setHighlight(node.target)}
         onMouseLeave={() => setHighlight(null)}
       >
-        <button
-          onClick={() => hasChildren && setOpen((o) => !o)}
-          aria-expanded={hasChildren ? open : undefined}
-          className={`flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-[13px] ${
-            hasChildren ? '' : 'cursor-default'
-          }`}
-          style={{ paddingLeft: `${8 + depth * 14}px` }}
+        <span
+          className="flex w-3 shrink-0 items-center justify-center text-ink-500"
+          style={{ marginLeft: `${8 + depth * 14}px` }}
         >
-          <span className="flex w-3 shrink-0 items-center justify-center text-ink-500">
-            {hasChildren && (
+          {hasChildren && (
+            <button
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-label={`${open ? 'Collapse' : 'Expand'} ${node.label}`}
+              className="rounded p-0.5 hover:text-ink-200"
+            >
               <svg
                 viewBox="0 0 12 12"
                 className={`h-3 w-3 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
@@ -63,11 +56,24 @@ export function TreeNode({ node, depth }: { node: TreeNodeData; depth: number })
               >
                 <path d="M4.5 2.5 8 6l-3.5 3.5" />
               </svg>
-            )}
-          </span>
+            </button>
+          )}
+        </span>
+        <button
+          onClick={() => {
+            select(node.path)
+            if (hasChildren && !open) setOpen(true)
+          }}
+          aria-pressed={selected}
+          className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-1.5 pr-2 text-left text-[13px]"
+        >
           <span
             className={`truncate ${
-              node.hidden ? 'text-ink-500 line-through decoration-ink-600' : 'text-ink-200'
+              node.hidden
+                ? 'text-ink-500 line-through decoration-ink-600'
+                : selected
+                  ? 'text-accent-text'
+                  : 'text-ink-200'
             }`}
           >
             {node.label}
@@ -78,9 +84,9 @@ export function TreeNode({ node, depth }: { node: TreeNodeData; depth: number })
             </span>
           )}
         </button>
-        {node.nodePath && (
+        {node.hideable && (
           <button
-            onClick={() => toggleVisibility(node.nodePath!)}
+            onClick={() => toggleVisibility(node.path)}
             aria-label={`${node.hidden ? 'Show' : 'Hide'} ${node.label}`}
             aria-pressed={!!node.hidden}
             title={node.hidden ? 'Show' : 'Hide'}
