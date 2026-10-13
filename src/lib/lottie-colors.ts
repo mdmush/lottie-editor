@@ -16,13 +16,22 @@ import type {
 import { hexToFloats, isLegacyRange, rgbComponentsToHex } from './color-utils'
 import { getAtPath, type JsonPath } from './json-path'
 
-export type ColorRef =
+export type ColorRef = (
   /** path → a [r,g,b(,a)] number array */
   | { kind: 'rgbArray'; path: JsonPath }
   /** path → a flattened gradient stop array; color at [4i+1 .. 4i+3] */
   | { kind: 'gradientStop'; path: JsonPath; stopIndex: number }
   /** path → an "#rrggbb" string (solid layer `sc`) */
   | { kind: 'hexString'; path: JsonPath }
+) & {
+  /**
+   * Path to the `o` (opacity, 0–100) property of the fill/stroke/gradient
+   * shape that owns this color. Renderers ignore the alpha component of
+   * color arrays — this is the property that actually controls how
+   * transparent the color draws. Absent for text and solid-layer colors.
+   */
+  opacityPath?: JsonPath
+}
 
 export interface ColorGroup {
   hex: string
@@ -36,6 +45,12 @@ const isKeyframes = (k: unknown): k is LottieKeyframe[] =>
   Array.isArray(k) && k.length > 0 && typeof k[0] === 'object' && k[0] !== null
 
 type Emit = (ref: ColorRef) => void
+
+/** Emit wrapper that tags every ref with the owning shape's `o` path. */
+function withOpacity(emit: Emit, opacityPath: JsonPath | undefined): Emit {
+  if (!opacityPath) return emit
+  return (ref) => emit({ ...ref, opacityPath })
+}
 
 function visitColorProperty(prop: LottieProperty | undefined, path: JsonPath, emit: Emit): void {
   if (!prop || typeof prop !== 'object') return
@@ -83,11 +98,11 @@ function walkShapes(items: ShapeItem[] | undefined, basePath: JsonPath, emit: Em
         break
       case 'fl':
       case 'st':
-        visitColorProperty(item.c, [...path, 'c'], emit)
+        visitColorProperty(item.c, [...path, 'c'], withOpacity(emit, [...path, 'o']))
         break
       case 'gf':
       case 'gs':
-        visitGradient(item.g, [...path, 'g'], emit)
+        visitGradient(item.g, [...path, 'g'], withOpacity(emit, [...path, 'o']))
         break
     }
   })
@@ -160,9 +175,8 @@ export function extractColors(doc: LottieDoc): ColorGroup[] {
 }
 
 /**
- * Alpha lives only in 4-component rgb arrays. Gradient stop alpha is stored
- * in separate [offset, alpha] pairs and solid layers have no alpha channel,
- * so neither is editable through a color group.
+ * Alpha component of a 4-component rgb array. Renderers ignore it, but we
+ * keep it in step with the shape opacity so the file stays self-consistent.
  */
 function alphaArrayForRef(doc: LottieDoc, ref: ColorRef): number[] | null {
   if (ref.kind !== 'rgbArray') return null
@@ -170,29 +184,109 @@ function alphaArrayForRef(doc: LottieDoc, ref: ColorRef): number[] | null {
   return isNumberArray(value) && value.length >= 4 ? value : null
 }
 
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n))
+
+/** Avoid float noise like 79.99999 in the saved JSON. */
+const roundPercent = (n: number) => Math.round(n * 1000) / 1000
+
 /**
- * The group's current opacity as a 0–1 float, read from its first
- * alpha-capable ref. Null when no ref in the group carries an alpha channel.
+ * Peak value of a shape's `o` property on its native 0–100 scale: the
+ * static value, or the highest keyframe of an animated one so a fade's
+ * fully-visible level is what the slider reports. Missing `o` means fully
+ * opaque. Null when the property is unreadable (e.g. an expression).
  */
-export function readGroupAlpha(doc: LottieDoc, refs: readonly ColorRef[]): number | null {
-  for (const ref of refs) {
-    const arr = alphaArrayForRef(doc, ref)
-    if (arr) {
-      const a = arr[3]
-      // Alpha keeps whatever scale the file already uses (0–1 or legacy 0–255).
-      return Math.min(1, Math.max(0, a > 1 ? a / 255 : a))
+function readOpacityPercent(doc: LottieDoc, opacityPath: JsonPath): number | null {
+  const prop = getAtPath(doc, opacityPath) as LottieProperty | undefined
+  if (prop === undefined) return 100
+  if (!prop || typeof prop !== 'object') return null
+  const k = prop.k
+  if (typeof k === 'number') return k
+  if (isKeyframes(k)) {
+    let peak: number | null = null
+    for (const kf of k) {
+      const v = Array.isArray(kf.s) ? kf.s[0] : kf.s
+      if (typeof v === 'number') peak = peak === null ? v : Math.max(peak, v)
     }
+    return peak
   }
   return null
 }
 
 /**
- * Set the alpha component on every alpha-capable ref, preserving each
- * array's native alpha scale. Mutates `doc` — call on an immer draft.
+ * Write a shape's `o` to `percent`. Animated opacities are scaled so their
+ * peak lands on `percent` and the fade keeps its shape; a flat-zero
+ * animation is set outright since there is nothing to scale.
+ */
+function writeOpacityPercent(doc: LottieDoc, opacityPath: JsonPath, percent: number): void {
+  const owner = getAtPath(doc, opacityPath.slice(0, -1))
+  if (!owner || typeof owner !== 'object') return
+  const key = opacityPath[opacityPath.length - 1]
+  const prop = (owner as Record<string | number, unknown>)[key] as LottieProperty | undefined
+  if (prop === undefined) {
+    ;(owner as Record<string | number, unknown>)[key] = { a: 0, k: percent }
+    return
+  }
+  if (!prop || typeof prop !== 'object') return
+  const k = prop.k
+  if (typeof k === 'number') {
+    prop.k = percent
+    return
+  }
+  if (!isKeyframes(k)) return
+  const peak = readOpacityPercent(doc, opacityPath)
+  const scale = peak && peak > 0 ? percent / peak : null
+  const rewrite = (v: unknown): unknown => {
+    if (typeof v !== 'number') return v
+    return roundPercent(scale === null ? percent : v * scale)
+  }
+  for (const kf of k) {
+    if (Array.isArray(kf.s)) kf.s[0] = rewrite(kf.s[0])
+    else if (typeof kf.s === 'number') kf.s = rewrite(kf.s)
+    if (Array.isArray(kf.e)) kf.e[0] = rewrite(kf.e[0])
+    else if (typeof kf.e === 'number') kf.e = rewrite(kf.e)
+  }
+}
+
+/** Unique `o` paths across a group — several refs (e.g. color keyframes) share one shape. */
+function uniqueOpacityPaths(refs: readonly ColorRef[]): JsonPath[] {
+  const seen = new Set<string>()
+  const out: JsonPath[] = []
+  for (const ref of refs) {
+    if (!ref.opacityPath) continue
+    const key = ref.opacityPath.join('\u0000')
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(ref.opacityPath)
+  }
+  return out
+}
+
+/**
+ * The group's current opacity as a 0–1 float, read from the first
+ * fill/stroke/gradient shape in the group. Null when nothing in the group
+ * has a shape opacity to drive (text, solid layers).
+ */
+export function readGroupAlpha(doc: LottieDoc, refs: readonly ColorRef[]): number | null {
+  for (const opacityPath of uniqueOpacityPaths(refs)) {
+    const pct = readOpacityPercent(doc, opacityPath)
+    if (pct !== null) return clamp01(pct / 100)
+  }
+  return null
+}
+
+/**
+ * Set the opacity of every fill/stroke/gradient shape in the group via its
+ * `o` property, and mirror it into any 4-component color arrays so the
+ * file stays self-consistent. Mutates `doc` — call on an immer draft.
  */
 export function applyAlphaToRefs(doc: LottieDoc, refs: readonly ColorRef[], alpha: number): void {
-  const a = Math.min(1, Math.max(0, alpha))
+  const a = clamp01(alpha)
+  const percent = roundPercent(a * 100)
+  for (const opacityPath of uniqueOpacityPaths(refs)) {
+    writeOpacityPercent(doc, opacityPath, percent)
+  }
   for (const ref of refs) {
+    if (!ref.opacityPath) continue
     const arr = alphaArrayForRef(doc, ref)
     if (!arr) continue
     if (arr[3] > 1) {
